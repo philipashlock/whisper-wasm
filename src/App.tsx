@@ -136,7 +136,7 @@ export default function App() {
             reject(new Error('Cancelled'));
           };
 
-          window.loadRemote(url, dst, sizeMB, progressCallback, storeCallback, cancelCallback, addLog);
+          window.loadRemote!(url, dst, sizeMB, progressCallback, storeCallback, cancelCallback, addLog);
         });
       } else {
         addLog('loadRemote not available, using fetch...');
