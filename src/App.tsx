@@ -93,7 +93,7 @@ export default function App() {
 
     try {
       const modelData = await modelManager.loadModel(selectedModel.id, true, (p) => setDownloadProgress(p));
-      await whisperService.initModel(modelData);
+      await whisperService.loadWasmModule(modelData);
       addLog('✓ Model initialized successfully');
       setModelLoaded(true);
     } catch (err) {
