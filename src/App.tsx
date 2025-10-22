@@ -1,12 +1,13 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { Mic, MicOff, Download, Loader, AlertCircle, CheckCircle, Trash2 } from 'lucide-react';
+import { WhisperWasmService, ModelManager } from '@timur00kh/whisper.wasm';
 
 const MODELS = [
-  { id: 'tiny.en', name: 'Tiny (English)', size: '75 MB', url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin', speed: 'Very Fast', accuracy: 'Basic' },
-  { id: 'base.en', name: 'Base (English)', size: '142 MB', url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin', speed: 'Fast', accuracy: 'Good' },
-  { id: 'base', name: 'Base (Multilingual)', size: '142 MB', url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin', speed: 'Fast', accuracy: 'Good' },
-  { id: 'tiny.en-q5_1', name: 'Tiny (Q5_1)', size: '31 MB', url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en-q5_1.bin', speed: 'Very Fast', accuracy: 'Basic' },
-  { id: 'base.en-q5_1', name: 'Base (Q5_1)', size: '57 MB', url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en-q5_1.bin', speed: 'Fast', accuracy: 'Good' },
+  { id: 'tiny.en' as const, name: 'Tiny (English)', size: '75 MB', url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin', speed: 'Very Fast', accuracy: 'Basic' },
+  { id: 'base.en' as const, name: 'Base (English)', size: '142 MB', url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin', speed: 'Fast', accuracy: 'Good' },
+  { id: 'base' as const, name: 'Base (Multilingual)', size: '142 MB', url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin', speed: 'Fast', accuracy: 'Good' },
+  { id: 'tiny.en-q5_1' as const, name: 'Tiny (Q5_1)', size: '31 MB', url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en-q5_1.bin', speed: 'Very Fast', accuracy: 'Basic' },
+  { id: 'base.en-q5_1' as const, name: 'Base (Q5_1)', size: '57 MB', url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en-q5_1.bin', speed: 'Fast', accuracy: 'Good' },
 ];
 
 const LANGUAGES = [
@@ -34,151 +35,72 @@ export default function App() {
   const [audioLevel, setAudioLevel] = useState(0);
   const [error, setError] = useState('');
   const [debugLog, setDebugLog] = useState<string[]>([]);
+  const [wasmSupported, setWasmSupported] = useState<boolean | null>(null);
+
+  // Get the type of the session object from the service method's return type
+  type TranscriptionSession = ReturnType<WhisperWasmService['createSession']>;
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
-  const instanceRef = useRef<number | null>(null);
-  const audio0Ref = useRef<Float32Array | null>(null);
-  const audioRef = useRef<Float32Array | null>(null);
-  const intervalRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const doRecordingRef = useRef(false);
-  const moduleRef = useRef<any>(null);
+  const sessionRef = useRef<TranscriptionSession | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const audioChunksRef = useRef<Float32Array[]>([]);
+  const processingIntervalRef = useRef<number | null>(null);
+  const isProcessingRef = useRef<boolean>(false);
 
   const kSampleRate = 16000;
-  const kRestartRecording_s = 120;
-  const kIntervalAudio_ms = 5000;
+  const kIntervalAudio_ms = 2000; // Process audio in 2-second chunks
+  const kBufferSize = 4096; // ScriptProcessor buffer size
+
+  const whisperService = useMemo(() => new WhisperWasmService({ logLevel: 1 }), []);
+  const modelManager = useMemo(() => new ModelManager(), []);
 
   const addLog = (msg: string) => {
     console.log(msg);
     setDebugLog(prev => [...prev.slice(-20), `${new Date().toLocaleTimeString()}: ${msg}`]);
   };
 
-  // Initialize Module object
   useEffect(() => {
-    addLog('Initializing...');
-
-    // Wait for stream.js to load
-    const checkModule = setInterval(() => {
-      if (typeof window.Module !== 'undefined') {
-        moduleRef.current = window.Module;
-        addLog('✓ Module loaded successfully');
-        clearInterval(checkModule);
+    const checkSupport = async () => {
+      addLog('Checking WASM support...');
+      const supported = await whisperService.checkWasmSupport();
+      setWasmSupported(supported);
+      addLog(supported ? '✓ WASM is supported' : '✗ WASM is not supported');
+      if (!supported) {
+        setError('WebAssembly is not supported in this browser.');
       }
-    }, 100);
-
-    // Setup Module callbacks
-    window.Module = window.Module || {
-      print: (text: string) => addLog(text),
-      printErr: (text: string) => addLog('ERROR: ' + text),
-      setStatus: (text: string) => {
-        addLog('Status: ' + text);
-        setStatus(text);
-      },
-      monitorRunDependencies: () => {},
-      preRun: () => addLog('Preparing...'),
-      postRun: () => addLog('✓ Initialized successfully!')
-    } as any;
+    };
+    checkSupport();
 
     return () => {
       stopRecording();
-      clearInterval(checkModule);
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
     };
   }, []);
 
   // Load model
   const loadModel = async () => {
+    if (!wasmSupported) {
+      setError('Cannot load model, WASM not supported.');
+      return;
+    }
     setDownloading(true);
     setDownloadProgress(0);
     setError('');
+    addLog(`Loading ${selectedModel.name} model...`);
 
     try {
-      const url = selectedModel.url;
-      const dst = 'whisper.bin';
-      const sizeMB = parseInt(selectedModel.size);
-
-      addLog(`Downloading ${selectedModel.name} model...`);
-
-      if (typeof window.loadRemote === 'function') {
-        await new Promise<void>((resolve, reject) => {
-          const progressCallback = (progress: number) => {
-            setDownloadProgress(Math.round(progress * 100));
-          };
-
-          const storeCallback = (fname: string, buf: Uint8Array) => {
-            try {
-              addLog(`Storing model in WASM filesystem...`);
-              try {
-                window.Module.FS_unlink(fname);
-              } catch (e) {
-                // File doesn't exist, ignore
-              }
-
-              window.Module.FS_createDataFile("/", fname, buf, true, true);
-              addLog(`✓ Model loaded: ${fname} (${buf.length} bytes)`);
-              setModelLoaded(true);
-              setDownloading(false);
-              resolve();
-            } catch (err) {
-              addLog(`✗ Error storing model: ${(err as Error).message}`);
-              reject(err);
-            }
-          };
-
-          const cancelCallback = () => {
-            setError('Model download cancelled');
-            setDownloading(false);
-            reject(new Error('Cancelled'));
-          };
-
-          window.loadRemote!(url, dst, sizeMB, progressCallback, storeCallback, cancelCallback, addLog);
-        });
-      } else {
-        addLog('loadRemote not available, using fetch...');
-        const response = await fetch(url);
-        const contentLength = +(response.headers.get('Content-Length') || 0);
-        const reader = response.body?.getReader();
-
-        if (!reader) throw new Error('Failed to get reader');
-
-        let receivedLength = 0;
-        const chunks: Uint8Array[] = [];
-
-        while(true) {
-          const {done, value} = await reader.read();
-          if (done) break;
-
-          chunks.push(value);
-          receivedLength += value.length;
-          setDownloadProgress(Math.round((receivedLength / contentLength) * 100));
-        }
-
-        const allChunks = new Uint8Array(receivedLength);
-        let position = 0;
-        for(const chunk of chunks) {
-          allChunks.set(chunk, position);
-          position += chunk.length;
-        }
-
-        try {
-          window.Module.FS_unlink('whisper.bin');
-        } catch (e) {
-          // File doesn't exist, ignore
-        }
-
-        window.Module.FS_createDataFile("/", 'whisper.bin', allChunks, true, true);
-        addLog(`✓ Model loaded via fetch`);
-        setModelLoaded(true);
-        setDownloading(false);
-      }
+      const modelData = await modelManager.loadModel(selectedModel.id, true, (p) => setDownloadProgress(p));
+      await whisperService.initModel(modelData);
+      addLog('✓ Model initialized successfully');
+      setModelLoaded(true);
     } catch (err) {
-      setError(`Failed to download model: ${(err as Error).message}`);
-      addLog(`✗ Download failed: ${(err as Error).message}`);
+      const errorMessage = `Failed to load model: ${(err as Error).message}`;
+      setError(errorMessage);
+      addLog(`✗ ${errorMessage}`);
+    } finally {
       setDownloading(false);
     }
   };
@@ -189,15 +111,9 @@ export default function App() {
       setError('');
       addLog('Starting recording...');
 
-      if (!instanceRef.current && window.Module && window.Module.init) {
-        addLog(`Initializing whisper instance with language: ${selectedLanguage}`);
-        instanceRef.current = window.Module.init('whisper.bin', selectedLanguage);
-        if (!instanceRef.current) {
-          throw new Error('Failed to initialize whisper');
-        }
-        addLog(`✓ Whisper instance created: ${instanceRef.current}`);
-      }
-
+      // Create a new transcription session
+      addLog(`Creating session with language: ${selectedLanguage}`);
+      sessionRef.current = whisperService.createSession();
       if (!audioContextRef.current) {
         audioContextRef.current = new AudioContext({
           sampleRate: kSampleRate,
@@ -216,113 +132,106 @@ export default function App() {
       analyserRef.current.fftSize = 256;
       visualize();
 
-      doRecordingRef.current = true;
       setIsRecording(true);
       setStatus('recording');
 
-      const chunks: Blob[] = [];
-      mediaRecorderRef.current = new MediaRecorder(stream);
+      // Use ScriptProcessorNode to capture raw audio (deprecated but widely supported)
+      // Note: AudioWorklet is the modern replacement but requires more setup
+      processorRef.current = audioContextRef.current.createScriptProcessor(kBufferSize, 1, 1);
+      audioChunksRef.current = [];
 
-      mediaRecorderRef.current.ondataavailable = async (e) => {
-        chunks.push(e.data);
+      processorRef.current.onaudioprocess = (e) => {
+        if (!sessionRef.current) return;
 
-        const blob = new Blob(chunks, { type: 'audio/ogg; codecs=opus' });
-        const arrayBuffer = await blob.arrayBuffer();
+        // Get the audio data from the input buffer
+        const inputData = e.inputBuffer.getChannelData(0);
+        // Copy the data (important because the buffer gets reused)
+        const audioChunk = new Float32Array(inputData);
+        audioChunksRef.current.push(audioChunk);
+      };
 
-        if (!audioContextRef.current) return;
+      // Connect the processor
+      source.connect(processorRef.current);
+      processorRef.current.connect(audioContextRef.current.destination);
+
+      // Process accumulated audio chunks at intervals
+      processingIntervalRef.current = window.setInterval(async () => {
+        // Skip if already processing or no session/data
+        if (isProcessingRef.current || !sessionRef.current || audioChunksRef.current.length === 0) {
+          if (isProcessingRef.current && audioChunksRef.current.length > 0) {
+            addLog('⏳ Skipping chunk - previous transcription still in progress');
+          }
+          return;
+        }
 
         try {
-          const audioBuffer = await audioContextRef.current.decodeAudioData(arrayBuffer);
-          const offlineContext = new OfflineAudioContext(
-            audioBuffer.numberOfChannels,
-            audioBuffer.length,
-            audioBuffer.sampleRate
-          );
-          const source = offlineContext.createBufferSource();
-          source.buffer = audioBuffer;
-          source.connect(offlineContext.destination);
-          source.start(0);
+          isProcessingRef.current = true;
 
-          const renderedBuffer = await offlineContext.startRendering();
-          audioRef.current = renderedBuffer.getChannelData(0);
-
-          const audioAll = new Float32Array(
-            audio0Ref.current == null ? audioRef.current.length : audio0Ref.current.length + audioRef.current.length
-          );
-          if (audio0Ref.current != null) {
-            audioAll.set(audio0Ref.current, 0);
+          // Concatenate all accumulated chunks
+          const totalLength = audioChunksRef.current.reduce((sum, chunk) => sum + chunk.length, 0);
+          const audioData = new Float32Array(totalLength);
+          let offset = 0;
+          for (const chunk of audioChunksRef.current) {
+            audioData.set(chunk, offset);
+            offset += chunk.length;
           }
-          audioAll.set(audioRef.current, audio0Ref.current == null ? 0 : audio0Ref.current.length);
 
-          if (instanceRef.current && window.Module.set_audio) {
-            window.Module.set_audio(instanceRef.current, audioAll);
-            addLog(`Audio chunk processed: ${audioAll.length} samples`);
+          // Clear the chunks for next interval
+          audioChunksRef.current = [];
+
+          addLog(`Processing audio chunk: ${audioData.length} samples`);
+          const stream = sessionRef.current.streamimg(audioData, {
+            language: selectedLanguage,
+            threads: 4,
+            translate: false,
+          });
+
+          for await (const segment of stream) {
+            const segmentText = `[${(segment.timeStart / 1000).toFixed(2)}s -> ${(segment.timeEnd / 1000).toFixed(2)}s] ${segment.text}`;
+            addLog(`New segment: ${segmentText}`);
+            setTranscribedText(prev => prev + ' ' + segment.text.trim());
           }
         } catch (err) {
-          addLog(`✗ Audio processing error: ${(err as Error).message}`);
+          const errorMessage = `Audio processing error: ${(err as Error).message}`;
+          addLog(`✗ ${errorMessage}`);
+          setError(errorMessage);
+        } finally {
+          isProcessingRef.current = false;
         }
-      };
+      }, kIntervalAudio_ms);
 
-      mediaRecorderRef.current.onstop = () => {
-        if (doRecordingRef.current) {
-          setTimeout(() => {
-            startRecording();
-          }, 0);
-        }
-      };
-
-      mediaRecorderRef.current.start(kIntervalAudio_ms);
       addLog(`✓ Recording started (${kIntervalAudio_ms}ms chunks)`);
-
-      // Update transcription display
-      intervalRef.current = window.setInterval(() => {
-        if (window.Module && window.Module.get_transcribed) {
-          const transcribed = window.Module.get_transcribed();
-          if (transcribed && transcribed.length > 1) {
-            setTranscribedText(prev => prev + transcribed + '\n');
-          }
-        }
-
-        if (window.Module && window.Module.get_status) {
-          const currentStatus = window.Module.get_status();
-          if (currentStatus) {
-            setStatus(currentStatus);
-          }
-        }
-
-        if (audioRef.current && audioRef.current.length > kSampleRate * kRestartRecording_s) {
-          if (doRecordingRef.current) {
-            addLog('Restarting recording (120s limit)');
-            audio0Ref.current = audioRef.current;
-            audioRef.current = null;
-            if (mediaRecorderRef.current) {
-              mediaRecorderRef.current.stop();
-            }
-            if (streamRef.current) {
-              streamRef.current.getTracks().forEach(track => track.stop());
-            }
-          }
-        }
-      }, 100);
-
     } catch (err) {
-      setError(`Microphone access error: ${(err as Error).message}`);
-      addLog(`✗ Recording error: ${(err as Error).message}`);
+      const errorMessage = `Microphone access error: ${(err as Error).message}`;
+      setError(errorMessage);
+      addLog(`✗ ${errorMessage}`);
+      setIsRecording(false);
     }
   };
 
   // Stop recording
   const stopRecording = () => {
     addLog('Stopping recording...');
-    doRecordingRef.current = false;
     setIsRecording(false);
     setStatus('paused');
-    setAudioLevel(0);
 
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
+    // Clear the processing interval
+    if (processingIntervalRef.current) {
+      clearInterval(processingIntervalRef.current);
+      processingIntervalRef.current = null;
     }
+
+    // Reset processing flag
+    isProcessingRef.current = false;
+
+    // Disconnect and clean up the audio processor
+    if (processorRef.current) {
+      processorRef.current.disconnect();
+      processorRef.current = null;
+    }
+
+    // Clear any remaining audio chunks
+    audioChunksRef.current = [];
 
     if (mediaRecorderRef.current) {
       mediaRecorderRef.current.stop();
@@ -337,10 +246,12 @@ export default function App() {
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
     }
+    setAudioLevel(0);
 
-    audio0Ref.current = null;
-    audioRef.current = null;
-    audioContextRef.current = null;
+    if (sessionRef.current) {
+      sessionRef.current = null;
+    }
+
     addLog('✓ Recording stopped');
   };
 
@@ -351,7 +262,7 @@ export default function App() {
     const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
 
     const draw = () => {
-      if (!doRecordingRef.current) return;
+      if (!isRecording) return;
       animationFrameRef.current = requestAnimationFrame(draw);
       analyserRef.current!.getByteFrequencyData(dataArray);
 
@@ -364,6 +275,7 @@ export default function App() {
 
   const clearTranscription = () => {
     setTranscribedText('');
+    addLog('Transcription cleared.');
     setDebugLog([]);
   };
 
@@ -474,7 +386,7 @@ export default function App() {
               <div className="flex items-center justify-center mb-4">
                 <button
                   onClick={isRecording ? stopRecording : startRecording}
-                  disabled={!modelLoaded}
+                  disabled={!modelLoaded || !wasmSupported}
                   className={`w-24 h-24 rounded-full flex items-center justify-center transition-all transform hover:scale-105 ${
                     isRecording
                       ? 'bg-red-600 hover:bg-red-700 animate-pulse'
@@ -492,7 +404,7 @@ export default function App() {
                 />
               </div>
               <p className="text-center text-sm text-slate-400 mt-2">
-                {isRecording ? 'Recording...' : modelLoaded ? 'Click to start' : 'Load model first'}
+                {isRecording ? 'Recording...' : modelLoaded ? 'Click to start' : wasmSupported === false ? 'WASM not supported' : 'Load model first'}
               </p>
             </div>
 
@@ -520,7 +432,7 @@ export default function App() {
 
           <div className="bg-black/30 rounded-lg p-4 min-h-[300px] max-h-[500px] overflow-y-auto font-mono text-sm">
             {transcribedText ? (
-              <pre className="whitespace-pre-wrap text-green-400">{transcribedText}</pre>
+              <p className="whitespace-pre-wrap text-green-400">{transcribedText}</p>
             ) : (
               <div className="text-center py-12 text-slate-500">
                 <Mic size={48} className="mx-auto mb-4 opacity-50" />
@@ -550,11 +462,10 @@ export default function App() {
             <AlertCircle size={18} />
             Integration Status
           </h3>
-          <ul className="text-sm text-slate-300 space-y-1 ml-6 list-disc">
-            <li>This page loads whisper.cpp WASM from https://ggml.ai/whisper.cpp/</li>
-            <li>To use your localhost version, change the script URLs in index.html to http://localhost:8000/</li>
-            <li>Models are downloaded from Hugging Face and cached in IndexedDB</li>
-            <li>All processing happens locally in WebAssembly - no server required</li>
+          <ul className="text-sm text-slate-300 space-y-1 ml-6 list-disc marker:text-purple-400">
+            <li>Now using <code>@timur00kh/whisper.wasm</code> library for a high-level API.</li>
+            <li>Model management (download/cache) is handled by <code>ModelManager</code>.</li>
+            <li>Streaming transcription is managed by <code>WhisperWasmService</code> and <code>TranscriptionSession</code>.</li>
             <li>Check the debug log above for detailed information about the initialization process</li>
           </ul>
         </div>
