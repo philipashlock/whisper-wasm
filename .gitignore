@@ -130,6 +130,12 @@ Thumbs.db
 *.swo
 *~
 
+# Firebase
+.firebase/*
+.firebaserc
+.idx/*
+.vite/*
+
 # Package manager locks (optional - commit if you want lock file)
 # package-lock.json
 # yarn.lock
