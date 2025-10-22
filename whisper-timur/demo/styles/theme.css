@@ -1,0 +1,237 @@
+/* CSS Variables for theming */
+:root {
+  /* Light theme colors */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8f9fa;
+  --bg-tertiary: #e9ecef;
+  --text-primary: #212529;
+  --text-secondary: #6c757d;
+  --border-color: #dee2e6;
+  --border-light: #e9ecef;
+  --success-bg: #d4edda;
+  --success-text: #155724;
+  --danger-bg: #f8d7da;
+  --danger-text: #721c24;
+  --info-bg: #d1ecf1;
+  --info-text: #0c5460;
+  --button-bg: #007bff;
+  --button-text: #ffffff;
+  --button-hover: #0056b3;
+  --button-disabled: #6c757d;
+  --input-bg: #ffffff;
+  --input-border: #ced4da;
+  --shadow: rgba(0, 0, 0, 0.1);
+}
+
+/* Dark theme */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-primary: #1a1a1a;
+    --bg-secondary: #2d2d2d;
+    --bg-tertiary: #3d3d3d;
+    --text-primary: #ffffff;
+    --text-secondary: #b3b3b3;
+    --border-color: #404040;
+    --border-light: #3d3d3d;
+    --success-bg: #1e4d2b;
+    --success-text: #d4edda;
+    --danger-bg: #4d1e1e;
+    --danger-text: #f8d7da;
+    --info-bg: #1e3a4d;
+    --info-text: #d1ecf1;
+    --button-bg: #0d6efd;
+    --button-text: #ffffff;
+    --button-hover: #0b5ed7;
+    --button-disabled: #6c757d;
+    --input-bg: #2d2d2d;
+    --input-border: #404040;
+    --shadow: rgba(0, 0, 0, 0.3);
+  }
+}
+
+/* Manual dark theme class (for toggle) */
+.dark-theme {
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #2d2d2d;
+  --bg-tertiary: #3d3d3d;
+  --text-primary: #ffffff;
+  --text-secondary: #b3b3b3;
+  --border-color: #404040;
+  --border-light: #3d3d3d;
+  --success-bg: #1e4d2b;
+  --success-text: #d4edda;
+  --danger-bg: #4d1e1e;
+  --danger-text: #f8d7da;
+  --info-bg: #1e3a4d;
+  --info-text: #d1ecf1;
+  --button-bg: #0d6efd;
+  --button-text: #ffffff;
+  --button-hover: #0b5ed7;
+  --button-disabled: #6c757d;
+  --input-bg: #2d2d2d;
+  --input-border: #404040;
+  --shadow: rgba(0, 0, 0, 0.3);
+}
+
+/* Manual light theme class (for toggle) */
+.light-theme {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8f9fa;
+  --bg-tertiary: #e9ecef;
+  --text-primary: #212529;
+  --text-secondary: #6c757d;
+  --border-color: #dee2e6;
+  --border-light: #e9ecef;
+  --success-bg: #d4edda;
+  --success-text: #155724;
+  --danger-bg: #f8d7da;
+  --danger-text: #721c24;
+  --info-bg: #d1ecf1;
+  --info-text: #0c5460;
+  --button-bg: #007bff;
+  --button-text: #ffffff;
+  --button-hover: #0056b3;
+  --button-disabled: #6c757d;
+  --input-bg: #ffffff;
+  --input-border: #ced4da;
+  --shadow: rgba(0, 0, 0, 0.1);
+}
+
+/* Base styles using CSS variables */
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition:
+    background-color 0.3s ease,
+    color 0.3s ease;
+}
+
+/* Component styles */
+.app-container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px;
+  font-family: Arial, sans-serif;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.section {
+  margin: 20px 0;
+  padding: 15px;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  background-color: var(--bg-secondary);
+}
+
+.input {
+  background-color: var(--input-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--input-border);
+  padding: 8px 12px;
+  border-radius: 4px;
+}
+
+.select {
+  background-color: var(--input-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--input-border);
+  padding: 8px 12px;
+  border-radius: 4px;
+  margin-right: 10px;
+}
+
+.textarea {
+  background-color: var(--input-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--input-border);
+  padding: 8px 12px;
+  border-radius: 4px;
+  width: 100%;
+  resize: vertical;
+}
+
+.status-success {
+  background-color: var(--success-bg);
+  color: var(--success-text);
+  padding: 10px;
+  border-radius: 3px;
+  margin-top: 10px;
+}
+
+.status-danger {
+  background-color: var(--danger-bg);
+  color: var(--danger-text);
+  padding: 10px;
+  border-radius: 3px;
+  margin-top: 10px;
+}
+
+.status-info {
+  background-color: var(--info-bg);
+  color: var(--info-text);
+  padding: 10px;
+  border-radius: 3px;
+  margin: 20px 0;
+}
+
+.progress-bar {
+  width: 100%;
+  background-color: var(--bg-tertiary);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-top: 10px;
+}
+
+.progress-fill {
+  height: 20px;
+  background-color: #4caf50;
+  transition: width 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.debug-info {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 5px;
+}
+
+.file-info {
+  padding: 10px;
+  background-color: var(--success-bg);
+  color: var(--success-text);
+  border-radius: 3px;
+}
+
+.theme-toggle {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  width: 50px;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px var(--shadow);
+}
+
+.theme-toggle:hover {
+  background-color: var(--bg-tertiary);
+  transform: scale(1.1);
+}
+
+.theme-toggle-icon {
+  font-size: 20px;
+  color: var(--text-primary);
+}

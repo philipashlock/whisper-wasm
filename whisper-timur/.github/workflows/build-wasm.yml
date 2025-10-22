@@ -1,0 +1,97 @@
+name: Build Whisper WASM
+
+on:
+  schedule:
+    # Run daily at 2 AM UTC to check for new whisper.cpp releases
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      whisper_version:
+        description: 'Whisper.cpp version to build (e.g., v1.5.4)'
+        required: false
+        default: 'latest'
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      should-build: ${{ steps.check.outputs.should-build }}
+      version: ${{ steps.check.outputs.version }}
+
+    steps:
+      - name: Check for new whisper.cpp releases
+        id: check
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.whisper_version }}"
+            if [ "$VERSION" = "latest" ]; then
+              VERSION=$(curl -s https://api.github.com/repos/ggerganov/whisper.cpp/releases/latest | jq -r '.tag_name')
+            fi
+            echo "should-build=true" >> $GITHUB_OUTPUT
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          else
+            # Check if there's a new release since last build
+            LATEST_VERSION=$(curl -s https://api.github.com/repos/ggerganov/whisper.cpp/releases/latest | jq -r '.tag_name')
+            LAST_BUILD_VERSION=$(curl -s https://api.github.com/repos/${{ github.repository }}/releases/latest | jq -r '.tag_name' 2>/dev/null || echo "v0.0.0")
+            
+            if [ "$LATEST_VERSION" != "$LAST_BUILD_VERSION" ]; then
+              echo "should-build=true" >> $GITHUB_OUTPUT
+              echo "version=$LATEST_VERSION" >> $GITHUB_OUTPUT
+            else
+              echo "should-build=false" >> $GITHUB_OUTPUT
+              echo "version=$LATEST_VERSION" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+  build-wasm:
+    runs-on: ubuntu-latest
+    needs: check-version
+    if: needs.check-version.outputs.should-build == 'true'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build WASM with specific version
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          echo "Building whisper.wasm for version: $VERSION"
+
+          # Update Dockerfile with specific version
+          sed -i "s/git checkout v1.5.4/git checkout $VERSION/" Dockerfile
+
+          # Build the Docker image
+          docker build -t whisper-wasm-builder:$VERSION .
+
+          # Extract WASM files
+          docker create --name temp-container whisper-wasm-builder:$VERSION
+          docker cp temp-container:/wasm ./wasm
+          docker rm temp-container
+
+      - name: Test WASM files
+        run: |
+          if [ ! -f "wasm/whisper.wasm" ] || [ ! -f "wasm/whisper.js" ]; then
+            echo "WASM files not found!"
+            exit 1
+          fi
+          echo "WASM files built successfully"
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'Update whisper.wasm to ${{ needs.check-version.outputs.version }}'
+          title: 'Update whisper.wasm to ${{ needs.check-version.outputs.version }}'
+          body: |
+            This PR updates whisper.wasm to version ${{ needs.check-version.outputs.version }}.
+
+            Changes:
+            - Updated whisper.wasm binary
+            - Updated whisper.js bindings
+
+            Please review and merge to trigger a new release.
+          branch: update-whisper-${{ needs.check-version.outputs.version }}
+          delete-branch: true
