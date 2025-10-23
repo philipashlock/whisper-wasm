@@ -3,18 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "workspaces": [
-    "whisper-timur",
     "whisper-wasm"
   ],
   "scripts": {
-    "build": "npm run build:lib && npm run build:app",
-    "build:lib": "npm run build --workspace=whisper-timur",
-    "build:app": "npm run build --workspace=whisper-wasm",
+    "build": "npm run build --workspace=whisper-wasm",
     "dev": "npm run dev --workspace=whisper-wasm",
-    "dev:lib": "npm run dev:demo --workspace=whisper-timur",
-    "install-all": "npm install"
+    "preview": "npm run preview --workspace=whisper-wasm"
   },
-  "description": "Monorepo for Whisper WASM speech-to-text with custom-built library",
+  "description": "Whisper WASM speech-to-text React application using GitHub-hosted library",
   "keywords": ["whisper", "wasm", "speech-to-text", "webassembly", "react"],
   "license": "MIT"
 }
