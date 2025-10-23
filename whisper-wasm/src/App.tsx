@@ -93,7 +93,7 @@ export default function App() {
 
     try {
       const modelData = await modelManager.loadModel(selectedModel.id, true, (p) => setDownloadProgress(p));
-      await whisperService.loadWasmModule(modelData);
+      await whisperService.initModel(modelData);
       addLog('✓ Model initialized successfully');
       setModelLoaded(true);
     } catch (err) {
@@ -180,7 +180,7 @@ export default function App() {
           audioChunksRef.current = [];
 
           addLog(`Processing audio chunk: ${audioData.length} samples`);
-          const stream = sessionRef.current.streamimg(audioData, {
+          const stream = sessionRef.current.streaming(audioData, {
             language: selectedLanguage,
             threads: 4,
             translate: false,
