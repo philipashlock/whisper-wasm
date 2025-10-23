@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Mic, MicOff, Download, Loader, AlertCircle, CheckCircle, Trash2, Sun, Moon } from 'lucide-react';
+import { Mic, MicOff, Download, Loader, AlertCircle, CheckCircle, Trash2, Sun, Moon, Square, Upload } from 'lucide-react';
 import { WhisperWasmService, ModelManager } from '@timur00kh/whisper.wasm';
 
 const MODELS = [
@@ -37,6 +37,10 @@ export default function App() {
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const [wasmSupported, setWasmSupported] = useState<boolean | null>(null);
   const [darkMode, setDarkMode] = useState(true);
+  const [transcriptionMode, setTranscriptionMode] = useState<'realtime' | 'recorded'>('realtime');
+  const [recordedAudioBlob, setRecordedAudioBlob] = useState<Blob | null>(null);
+  const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   // Get the type of the session object from the service method's return type
   type TranscriptionSession = ReturnType<WhisperWasmService['createSession']>;
@@ -280,6 +284,137 @@ export default function App() {
     setDebugLog([]);
   };
 
+  // Recorded Audio Mode Functions
+  const startRecordedAudioCapture = async () => {
+    if (!modelLoaded) {
+      setError('Please load a model first');
+      return;
+    }
+
+    try {
+      setError('');
+      setStatus('Recording audio...');
+      addLog('Starting recorded audio capture...');
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+
+      const chunks: Blob[] = [];
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          chunks.push(e.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'audio/webm' });
+        setRecordedAudioBlob(blob);
+        const url = URL.createObjectURL(blob);
+        setRecordedAudioUrl(url);
+        addLog(`✓ Audio recorded: ${(blob.size / 1024).toFixed(2)} KB`);
+        setStatus('Ready to transcribe');
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      addLog('✓ Recording started');
+    } catch (err) {
+      const errorMessage = `Failed to start recording: ${(err as Error).message}`;
+      setError(errorMessage);
+      addLog(`✗ ${errorMessage}`);
+    }
+  };
+
+  const stopRecordedAudioCapture = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+
+    setIsRecording(false);
+    addLog('✓ Recording stopped');
+  };
+
+  const transcribeRecordedAudio = async () => {
+    if (!recordedAudioBlob || !modelLoaded) {
+      setError('No audio to transcribe or model not loaded');
+      return;
+    }
+
+    try {
+      setIsProcessing(true);
+      setError('');
+      setStatus('Processing audio...');
+      setTranscribedText('');
+      addLog('Converting audio to Float32Array...');
+
+      // Convert blob to AudioBuffer
+      const arrayBuffer = await recordedAudioBlob.arrayBuffer();
+      const audioContext = new AudioContext({ sampleRate: 16000 });
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+      // Convert to Float32Array (mono, 16kHz)
+      let audioData: Float32Array;
+      if (audioBuffer.numberOfChannels > 1) {
+        // Mix down to mono
+        const channel1 = audioBuffer.getChannelData(0);
+        const channel2 = audioBuffer.getChannelData(1);
+        audioData = new Float32Array(channel1.length);
+        for (let i = 0; i < channel1.length; i++) {
+          audioData[i] = (channel1[i] + channel2[i]) / 2;
+        }
+      } else {
+        audioData = audioBuffer.getChannelData(0);
+      }
+
+      addLog(`Audio length: ${audioData.length} samples (${(audioData.length / 16000).toFixed(2)}s)`);
+      setStatus('Transcribing...');
+
+      // Use the transcribe method for batch processing
+      const result = await whisperService.transcribe(
+        audioData,
+        (segment) => {
+          // Append each segment as it comes
+          setTranscribedText(prev => prev + segment.text);
+          addLog(`Segment: ${segment.text}`);
+        },
+        {
+          language: selectedLanguage,
+          threads: 4,
+          translate: false,
+        }
+      );
+
+      addLog(`✓ Transcription complete in ${result.transcribeDurationMs}ms`);
+      setStatus('Transcription complete');
+      setIsProcessing(false);
+    } catch (err) {
+      const errorMessage = `Failed to transcribe: ${(err as Error).message}`;
+      setError(errorMessage);
+      addLog(`✗ ${errorMessage}`);
+      setIsProcessing(false);
+      setStatus('Error');
+    }
+  };
+
+  const clearRecordedAudio = () => {
+    if (recordedAudioUrl) {
+      URL.revokeObjectURL(recordedAudioUrl);
+    }
+    setRecordedAudioBlob(null);
+    setRecordedAudioUrl(null);
+    setTranscribedText('');
+    setStatus('Ready');
+    addLog('Cleared recorded audio');
+  };
+
   return (
     <div className={`min-h-screen p-8 transition-colors ${
       darkMode
@@ -408,43 +543,159 @@ export default function App() {
           <div className={`backdrop-blur-sm rounded-xl p-6 border ${
             darkMode ? 'bg-white/10 border-white/20' : 'bg-white border-slate-200 shadow-lg'
           }`}>
-            <h2 className="text-xl font-semibold mb-4">Recording & Transcription</h2>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold">Recording & Transcription</h2>
 
-            <div className="mb-6">
-              <div className="flex items-center justify-center mb-4">
+              {/* Mode Toggle */}
+              <div className={`flex rounded-lg p-1 ${darkMode ? 'bg-white/5' : 'bg-slate-100'}`}>
                 <button
-                  onClick={isRecording ? stopRecording : startRecording}
-                  disabled={!modelLoaded || !wasmSupported}
-                  className={`w-24 h-24 rounded-full flex items-center justify-center transition-all transform hover:scale-105 ${
-                    isRecording
-                      ? 'bg-red-600 hover:bg-red-700 animate-pulse'
-                      : 'bg-purple-600 hover:bg-purple-700'
-                  } disabled:bg-slate-700 disabled:cursor-not-allowed disabled:hover:scale-100`}
+                  onClick={() => {
+                    setTranscriptionMode('realtime');
+                    if (recordedAudioBlob) clearRecordedAudio();
+                  }}
+                  className={`px-3 py-1 rounded text-sm transition-all ${
+                    transcriptionMode === 'realtime'
+                      ? 'bg-purple-600 text-white'
+                      : darkMode ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900'
+                  }`}
                 >
-                  {isRecording ? <MicOff size={40} /> : <Mic size={40} />}
+                  Realtime
+                </button>
+                <button
+                  onClick={() => {
+                    setTranscriptionMode('recorded');
+                    if (isRecording) stopRecording();
+                  }}
+                  className={`px-3 py-1 rounded text-sm transition-all ${
+                    transcriptionMode === 'recorded'
+                      ? 'bg-purple-600 text-white'
+                      : darkMode ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Recorded Audio
                 </button>
               </div>
-
-              <div className="bg-white/5 rounded-full h-3 overflow-hidden">
-                <div
-                  className="bg-gradient-to-r from-green-500 via-yellow-500 to-red-500 h-full transition-all duration-100"
-                  style={{ width: `${audioLevel}%` }}
-                />
-              </div>
-              <p className={`text-center text-sm mt-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                {isRecording ? 'Recording...' : modelLoaded ? 'Click to start' : wasmSupported === false ? 'WASM not supported' : 'Load model first'}
-              </p>
             </div>
 
-            <div className={`p-3 rounded-lg mb-4 ${darkMode ? 'bg-white/5' : 'bg-slate-100'}`}>
-              <div className={`text-sm ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>Status</div>
-              <div className="text-lg font-bold">{status}</div>
-            </div>
+            {transcriptionMode === 'realtime' ? (
+              /* Realtime Mode Controls */
+              <>
+                <div className="mb-6">
+                  <div className="flex items-center justify-center mb-4">
+                    <button
+                      onClick={isRecording ? stopRecording : startRecording}
+                      disabled={!modelLoaded || !wasmSupported}
+                      className={`w-24 h-24 rounded-full flex items-center justify-center transition-all transform hover:scale-105 ${
+                        isRecording
+                          ? 'bg-red-600 hover:bg-red-700 animate-pulse'
+                          : 'bg-purple-600 hover:bg-purple-700'
+                      } disabled:bg-slate-700 disabled:cursor-not-allowed disabled:hover:scale-100`}
+                    >
+                      {isRecording ? <MicOff size={40} /> : <Mic size={40} />}
+                    </button>
+                  </div>
+
+                  <div className={`rounded-full h-3 overflow-hidden ${darkMode ? 'bg-white/5' : 'bg-slate-200'}`}>
+                    <div
+                      className="bg-gradient-to-r from-green-500 via-yellow-500 to-red-500 h-full transition-all duration-100"
+                      style={{ width: `${audioLevel}%` }}
+                    />
+                  </div>
+                  <p className={`text-center text-sm mt-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    {isRecording ? 'Recording...' : modelLoaded ? 'Click to start' : wasmSupported === false ? 'WASM not supported' : 'Load model first'}
+                  </p>
+                </div>
+
+                <div className={`p-3 rounded-lg mb-4 ${darkMode ? 'bg-white/5' : 'bg-slate-100'}`}>
+                  <div className={`text-sm ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>Status</div>
+                  <div className="text-lg font-bold">{status}</div>
+                </div>
+              </>
+            ) : (
+              /* Recorded Audio Mode Controls */
+              <>
+                <div className="mb-6">
+                  <div className="flex justify-center gap-4 mb-4">
+                    <button
+                      onClick={isRecording ? stopRecordedAudioCapture : startRecordedAudioCapture}
+                      disabled={!modelLoaded || !wasmSupported || isProcessing}
+                      className={`px-6 py-3 rounded-lg flex items-center gap-2 transition-all ${
+                        isRecording
+                          ? 'bg-red-600 hover:bg-red-700'
+                          : 'bg-purple-600 hover:bg-purple-700'
+                      } disabled:bg-slate-700 disabled:cursor-not-allowed`}
+                    >
+                      {isRecording ? (
+                        <>
+                          <Square size={20} />
+                          Stop Recording
+                        </>
+                      ) : (
+                        <>
+                          <Mic size={20} />
+                          Start Recording
+                        </>
+                      )}
+                    </button>
+
+                    {recordedAudioBlob && !isRecording && (
+                      <button
+                        onClick={transcribeRecordedAudio}
+                        disabled={isProcessing}
+                        className="px-6 py-3 rounded-lg bg-green-600 hover:bg-green-700 disabled:bg-slate-700 disabled:cursor-not-allowed flex items-center gap-2"
+                      >
+                        {isProcessing ? (
+                          <>
+                            <Loader size={20} className="animate-spin" />
+                            Transcribing...
+                          </>
+                        ) : (
+                          <>
+                            <Upload size={20} />
+                            Transcribe
+                          </>
+                        )}
+                      </button>
+                    )}
+
+                    {recordedAudioBlob && !isRecording && (
+                      <button
+                        onClick={clearRecordedAudio}
+                        disabled={isProcessing}
+                        className={`px-4 py-3 rounded-lg flex items-center gap-2 ${
+                          darkMode ? 'bg-white/10 hover:bg-white/20' : 'bg-slate-200 hover:bg-slate-300'
+                        } disabled:opacity-50 disabled:cursor-not-allowed`}
+                      >
+                        <Trash2 size={20} />
+                      </button>
+                    )}
+                  </div>
+
+                  {recordedAudioUrl && (
+                    <div className={`p-3 rounded-lg mb-4 ${darkMode ? 'bg-white/5' : 'bg-slate-100'}`}>
+                      <div className={`text-sm mb-2 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>Audio Preview</div>
+                      <audio
+                        src={recordedAudioUrl}
+                        controls
+                        className="w-full"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className={`p-3 rounded-lg mb-4 ${darkMode ? 'bg-white/5' : 'bg-slate-100'}`}>
+                  <div className={`text-sm ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>Status</div>
+                  <div className="text-lg font-bold">{status}</div>
+                </div>
+              </>
+            )}
 
             {/* Integrated Transcription Display */}
             <div className="mt-4">
               <div className="flex justify-between items-center mb-2">
-                <h3 className="font-semibold">Live Transcription</h3>
+                <h3 className="font-semibold">
+                  {transcriptionMode === 'realtime' ? 'Live Transcription' : 'Transcription Result'}
+                </h3>
                 {transcribedText && (
                   <button
                     onClick={clearTranscription}
