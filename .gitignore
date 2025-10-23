@@ -4,6 +4,9 @@ node_modules/
 # Build outputs - App
 whisper-wasm/dist/
 
+# new whisper.wasm npm package fork
+whisper.wasm.npm/
+
 # Build outputs - Library
 # DO NOT ignore whisper-timur/dist/ - needed for deployment!
 # whisper-timur/dist/
@@ -140,3 +143,5 @@ Thumbs.db
 # package-lock.json
 # yarn.lock
 # pnpm-lock.yaml
+
+CONTEXT.md

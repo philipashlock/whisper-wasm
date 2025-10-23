@@ -10,7 +10,7 @@
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
-    "@timur00kh/whisper.wasm": "*",
+    "@timur00kh/whisper.wasm": "github:philipashlock/whisper.wasm#main",
     "lucide-react": "^0.294.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
