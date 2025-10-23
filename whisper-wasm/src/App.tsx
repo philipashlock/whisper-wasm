@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Mic, MicOff, Download, Loader, AlertCircle, CheckCircle, Trash2 } from 'lucide-react';
+import { Mic, MicOff, Download, Loader, AlertCircle, CheckCircle, Trash2, Sun, Moon } from 'lucide-react';
 import { WhisperWasmService, ModelManager } from '@timur00kh/whisper.wasm';
 
 const MODELS = [
@@ -36,6 +36,7 @@ export default function App() {
   const [error, setError] = useState('');
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const [wasmSupported, setWasmSupported] = useState<boolean | null>(null);
+  const [darkMode, setDarkMode] = useState(true);
 
   // Get the type of the session object from the service method's return type
   type TranscriptionSession = ReturnType<WhisperWasmService['createSession']>;
@@ -280,11 +281,28 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white p-8">
+    <div className={`min-h-screen p-8 transition-colors ${
+      darkMode
+        ? 'bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white'
+        : 'bg-gradient-to-br from-slate-50 via-purple-50 to-slate-50 text-slate-900'
+    }`}>
       <div className="max-w-6xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold mb-2">Whisper.cpp Real-time Transcription</h1>
-          <p className="text-slate-300">WebAssembly-powered speech recognition in your browser</p>
+        <div className="mb-8 flex justify-between items-start">
+          <div>
+            <h1 className="text-4xl font-bold mb-2">Whisper.cpp Real-time Transcription</h1>
+            <p className={darkMode ? 'text-slate-300' : 'text-slate-600'}>WebAssembly-powered speech recognition in your browser</p>
+          </div>
+          <button
+            onClick={() => setDarkMode(!darkMode)}
+            className={`p-3 rounded-lg transition-all ${
+              darkMode
+                ? 'bg-white/10 hover:bg-white/20 border border-white/20'
+                : 'bg-slate-200 hover:bg-slate-300 border border-slate-300'
+            }`}
+            aria-label="Toggle dark mode"
+          >
+            {darkMode ? <Sun size={24} /> : <Moon size={24} />}
+          </button>
         </div>
 
         {error && (
@@ -296,11 +314,13 @@ export default function App() {
 
         <div className="grid md:grid-cols-2 gap-6 mb-6">
           {/* Model Selection */}
-          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/20">
+          <div className={`backdrop-blur-sm rounded-xl p-6 border ${
+            darkMode ? 'bg-white/10 border-white/20' : 'bg-white border-slate-200 shadow-lg'
+          }`}>
             <h2 className="text-xl font-semibold mb-4">Model Configuration</h2>
 
             <div className="mb-4">
-              <label className="block text-sm text-slate-300 mb-2">Select Model</label>
+              <label className={`block text-sm mb-2 ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>Select Model</label>
               <div className="space-y-2">
                 {MODELS.map(model => (
                   <button
@@ -312,15 +332,17 @@ export default function App() {
                     disabled={isRecording}
                     className={`w-full p-3 rounded-lg text-left transition-all ${
                       selectedModel.id === model.id
-                        ? 'bg-purple-600 border-2 border-purple-400'
-                        : 'bg-white/5 hover:bg-white/10 border-2 border-transparent'
+                        ? 'bg-purple-600 text-white border-2 border-purple-400'
+                        : darkMode
+                        ? 'bg-white/5 hover:bg-white/10 border-2 border-transparent'
+                        : 'bg-slate-100 hover:bg-slate-200 border-2 border-transparent'
                     } disabled:opacity-50 disabled:cursor-not-allowed`}
                   >
                     <div className="flex justify-between items-start mb-1">
                       <span className="font-medium">{model.name}</span>
-                      <span className="text-sm text-slate-300">{model.size}</span>
+                      <span className={`text-sm ${selectedModel.id === model.id ? 'text-purple-100' : darkMode ? 'text-slate-300' : 'text-slate-600'}`}>{model.size}</span>
                     </div>
-                    <div className="flex gap-3 text-xs text-slate-400">
+                    <div className={`flex gap-3 text-xs ${selectedModel.id === model.id ? 'text-purple-200' : darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                       <span>Speed: {model.speed}</span>
                       <span>Accuracy: {model.accuracy}</span>
                     </div>
@@ -330,15 +352,19 @@ export default function App() {
             </div>
 
             <div className="mb-4">
-              <label className="block text-sm text-slate-300 mb-2">Language</label>
+              <label className={`block text-sm mb-2 ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>Language</label>
               <select
                 value={selectedLanguage}
                 onChange={(e) => setSelectedLanguage(e.target.value)}
                 disabled={isRecording}
-                className="w-full bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                className={`w-full border rounded-lg px-3 py-2 disabled:opacity-50 disabled:cursor-not-allowed ${
+                  darkMode
+                    ? 'bg-white/5 border-white/20 text-white'
+                    : 'bg-white border-slate-300 text-slate-900'
+                }`}
               >
                 {LANGUAGES.map(lang => (
-                  <option key={lang.code} value={lang.code} className="bg-slate-900">
+                  <option key={lang.code} value={lang.code} className={darkMode ? 'bg-slate-900' : 'bg-white'}>
                     {lang.name}
                   </option>
                 ))}
@@ -369,7 +395,7 @@ export default function App() {
             </button>
 
             {downloading && (
-              <div className="mt-3 bg-white/5 rounded-full h-2 overflow-hidden">
+              <div className={`mt-3 rounded-full h-2 overflow-hidden ${darkMode ? 'bg-white/5' : 'bg-slate-200'}`}>
                 <div
                   className="bg-purple-500 h-full transition-all duration-300"
                   style={{ width: `${downloadProgress}%` }}
@@ -378,9 +404,11 @@ export default function App() {
             )}
           </div>
 
-          {/* Recording Controls */}
-          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/20">
-            <h2 className="text-xl font-semibold mb-4">Recording Controls</h2>
+          {/* Recording Controls with Transcription */}
+          <div className={`backdrop-blur-sm rounded-xl p-6 border ${
+            darkMode ? 'bg-white/10 border-white/20' : 'bg-white border-slate-200 shadow-lg'
+          }`}>
+            <h2 className="text-xl font-semibold mb-4">Recording & Transcription</h2>
 
             <div className="mb-6">
               <div className="flex items-center justify-center mb-4">
@@ -403,69 +431,81 @@ export default function App() {
                   style={{ width: `${audioLevel}%` }}
                 />
               </div>
-              <p className="text-center text-sm text-slate-400 mt-2">
+              <p className={`text-center text-sm mt-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                 {isRecording ? 'Recording...' : modelLoaded ? 'Click to start' : wasmSupported === false ? 'WASM not supported' : 'Load model first'}
               </p>
             </div>
 
-            <div className="p-3 bg-white/5 rounded-lg">
-              <div className="text-sm text-slate-400">Status</div>
+            <div className={`p-3 rounded-lg mb-4 ${darkMode ? 'bg-white/5' : 'bg-slate-100'}`}>
+              <div className={`text-sm ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>Status</div>
               <div className="text-lg font-bold">{status}</div>
+            </div>
+
+            {/* Integrated Transcription Display */}
+            <div className="mt-4">
+              <div className="flex justify-between items-center mb-2">
+                <h3 className="font-semibold">Live Transcription</h3>
+                {transcribedText && (
+                  <button
+                    onClick={clearTranscription}
+                    className={`text-sm flex items-center gap-2 ${
+                      darkMode ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <Trash2 size={16} />
+                    Clear
+                  </button>
+                )}
+              </div>
+
+              <div className={`rounded-lg p-4 min-h-[200px] max-h-[300px] overflow-y-auto ${
+                darkMode ? 'bg-black/30' : 'bg-slate-50 border border-slate-200'
+              }`}>
+                {transcribedText ? (
+                  <p className="whitespace-pre-wrap leading-relaxed">{transcribedText}</p>
+                ) : (
+                  <div className={`text-center py-8 ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                    <Mic size={36} className="mx-auto mb-3 opacity-50" />
+                    <p className="text-sm">Transcription will appear here in real-time</p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Transcription Display */}
-        <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/20 mb-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold">Real-time Transcription</h2>
-            {transcribedText && (
-              <button
-                onClick={clearTranscription}
-                className="text-sm text-slate-400 hover:text-white flex items-center gap-2"
-              >
-                <Trash2 size={16} />
-                Clear
-              </button>
-            )}
-          </div>
-
-          <div className="bg-black/30 rounded-lg p-4 min-h-[300px] max-h-[500px] overflow-y-auto font-mono text-sm">
-            {transcribedText ? (
-              <p className="whitespace-pre-wrap text-green-400">{transcribedText}</p>
-            ) : (
-              <div className="text-center py-12 text-slate-500">
-                <Mic size={48} className="mx-auto mb-4 opacity-50" />
-                <p>Transcription will appear here in real-time as you speak</p>
-              </div>
-            )}
-          </div>
-        </div>
-
         {/* Debug Log */}
-        <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/20">
+        <div className={`backdrop-blur-sm rounded-xl p-6 border ${
+          darkMode ? 'bg-white/10 border-white/20' : 'bg-white border-slate-200 shadow-lg'
+        }`}>
           <h2 className="text-xl font-semibold mb-4">Debug Log</h2>
-          <div className="bg-black/30 rounded-lg p-4 max-h-[200px] overflow-y-auto font-mono text-xs">
+          <div className={`rounded-lg p-4 max-h-[200px] overflow-y-auto font-mono text-xs ${
+            darkMode ? 'bg-black/30' : 'bg-slate-50 border border-slate-200'
+          }`}>
             {debugLog.length > 0 ? (
               debugLog.map((log, i) => (
-                <div key={i} className="text-slate-300 mb-1">{log}</div>
+                <div key={i} className={`mb-1 ${darkMode ? 'text-slate-300' : 'text-slate-700'}`}>{log}</div>
               ))
             ) : (
-              <div className="text-slate-500 text-center">Debug information will appear here</div>
+              <div className={`text-center ${darkMode ? 'text-slate-500' : 'text-slate-400'}`}>Debug information will appear here</div>
             )}
           </div>
         </div>
 
         {/* Integration Status */}
-        <div className="mt-6 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+        <div className={`mt-6 p-4 border rounded-lg ${
+          darkMode ? 'bg-blue-500/10 border-blue-500/30' : 'bg-blue-50 border-blue-200'
+        }`}>
           <h3 className="font-semibold mb-2 flex items-center gap-2">
             <AlertCircle size={18} />
             Integration Status
           </h3>
-          <ul className="text-sm text-slate-300 space-y-1 ml-6 list-disc marker:text-purple-400">
-            <li>Now using <code>@timur00kh/whisper.wasm</code> library for a high-level API.</li>
-            <li>Model management (download/cache) is handled by <code>ModelManager</code>.</li>
-            <li>Streaming transcription is managed by <code>WhisperWasmService</code> and <code>TranscriptionSession</code>.</li>
+          <ul className={`text-sm space-y-1 ml-6 list-disc marker:text-purple-400 ${
+            darkMode ? 'text-slate-300' : 'text-slate-700'
+          }`}>
+            <li>Now using <code className={darkMode ? 'text-purple-300' : 'text-purple-700'}>@timur00kh/whisper.wasm</code> library for a high-level API.</li>
+            <li>Model management (download/cache) is handled by <code className={darkMode ? 'text-purple-300' : 'text-purple-700'}>ModelManager</code>.</li>
+            <li>Streaming transcription is managed by <code className={darkMode ? 'text-purple-300' : 'text-purple-700'}>WhisperWasmService</code> and <code className={darkMode ? 'text-purple-300' : 'text-purple-700'}>TranscriptionSession</code>.</li>
             <li>Check the debug log above for detailed information about the initialization process</li>
           </ul>
         </div>
